@@ -2,6 +2,7 @@ import requests
 import json
 from datetime import datetime as dt
 from typing import Dict, Any
+from google.cloud import bigquery
 
 class FlightAwareAPI:
     
@@ -23,3 +24,15 @@ class FlightAwareAPI:
             return response.json()
         else:
             raise requests.HTTPError(f"Error: {response.status_code}, {response.text}")
+        
+
+
+def run_bigquery_query(query):
+    # Create a BigQuery client.
+    client = bigquery.Client()
+
+    # Run the query
+    query_job = client.query(query)  # API request
+    results_df = query_job.to_dataframe()  # Waits for query to finish and returns a DataFrame
+
+    return results_df

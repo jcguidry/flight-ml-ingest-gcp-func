@@ -1,20 +1,33 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[14]:
+# In[1]:
 
 
 import os
+
 import requests
 import pandas as pd
-import pyarrow as pa
-import awswrangler as wr
+
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_rows', 50)
+
+import logging
+logging.basicConfig(level=logging.INFO)
+
+from pandas_gbq import gbq
 
 from datetime import datetime as dt
 from datetime import timedelta 
 
 from utils import FlightAwareAPI
+from utils import run_bigquery_query
 
+
+# In[2]:
+
+
+## I/O Functions
 
 def get_flight_data(api, identifier, start_datetime, end_datetime, max_pages=40):
     """
@@ -35,8 +48,37 @@ def get_flight_data(api, identifier, start_datetime, end_datetime, max_pages=40)
 
     return df
 
+
+def get_last_run_timestamp(table_ref):
+    # Define the query to get the max timestamp
+    query = f"SELECT MAX(crt_ts) as max_ts FROM `{table_ref}`"
+
+    try:
+        results_df = run_bigquery_query(query)
+        last_run_ts = results_df['max_ts'][0]
+        #this will raise an error if the timestamp is NaT, which occurs when the table is empty.
+        assert results_df['max_ts'][0] != pd.NaT 
+        return last_run_ts
+    
+
+    except Exception as e:
+        # If an error occurs (such as the table not existing), return a very early timestamp
+        print('No existing table, returning early timestamp.')
+        return pd.Timestamp('2000-01-01 00:00:00')
+
+
+# In[3]:
+
+
+## Transformation Functions
+
+def rename_columns_remove_periods(dataframe):
+    new_columns = dataframe.columns.str.replace(".", "_")
+    dataframe = dataframe.rename(columns=dict(zip(dataframe.columns, new_columns)))
+    return dataframe
+
 def create_crt_ts_cols(df):
-    df['crt_ts'] = dt.now()#.strftime('%Y-%m-%dT%H:%M:%SZ')
+    df['crt_ts'] = pd.to_datetime('now') 
     df['crt_ts_year'] = df['crt_ts'].dt.year
     df['crt_ts_month'] = df['crt_ts'].dt.month
     df['crt_ts_day'] = df['crt_ts'].dt.day
@@ -44,56 +86,70 @@ def create_crt_ts_cols(df):
     return df
 
 
-# In[15]:
+# In[4]:
 
 
 def main():
     # CREDENTIALS - DELETE THIS LINE BEFORE COMMITTING
     os.environ['FLIGHTAWARE_API_KEY'] = 'w4tsTSMNABOlC4HTtKsc38Odp8CDGAK9'
-    os.environ["AWS_ACCESS_KEY_ID"] = "AKIASJUJRRTXE7L2J6FD"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "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"
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/Users/collinguidry/Downloads/aia-ds-accelerator-flight-1-ba42ff928314.json"
 
-
-    # QUERY PARAMETERS
-    lookback_hours = 7*24 # based on the flight's estimated or actual departure
-    lookfoward_hours = 2*24 
+    # API QUERY PARAMETERS
     identifier = 'AAL2563'
 
-    # S3 PARAMETERS
-    bucket = "flight-ml-demo"
-    table_path = "ingested_raw/flightsummary" # since table is partitioned, does end with .parquet
-
-    s3_path = f"{bucket}/{table_path}"
-    s3_path_full = f"s3://{bucket}/{table_path}"
-
-
+    lookback_hours = 7*24 # based on the flight's estimated or actual departure
+    lookfoward_hours = 2*24 
     # Timestamp calculations
     query_start = (dt.now()- timedelta(hours=lookback_hours)).strftime('%Y-%m-%dT%H:%M:%SZ')
     current_time = dt.now().strftime('%Y-%m-%dT%H:%M:%SZ')
     query_end = (dt.now()+ timedelta(hours=lookfoward_hours)).strftime('%Y-%m-%dT%H:%M:%SZ')
-    
+
+
+    # BIGQUERY OUTPUT PARAMETERS
+    project_id = 'aia-ds-accelerator-flight-1'
+    dataset_id = 'flightaware'
+    table_id = 'flightsummary_raw'
+    # BigQuery output table name
+    table_ref_out = f"{project_id}.{dataset_id}.{table_id}"
+
 
     # EXECUTION
     API = FlightAwareAPI(os.getenv('FLIGHTAWARE_API_KEY'))
 
     df = get_flight_data(API, identifier, query_start, query_end)
-    # print('API call complete')
 
-    df = create_crt_ts_cols(df)
+    # Rename columns with '.' in the name.
+    df = rename_columns_remove_periods(df)
+
+    # Convert columns to string to avoid errors when writing to BigQuery
+    df['codeshares'] = df['codeshares'].astype(str)
+    df['codeshares_iata'] = df['codeshares_iata'].astype(str)
+
+    # Get the last run timestamp from BigQuery
+    last_run_ts = get_last_run_timestamp(table_ref=table_ref_out)
+    df['last_run_ts'] = last_run_ts
     
-    # print('data transformations complete')
+    print(f'last run timestamp: {last_run_ts}')
 
-    wr.s3.to_parquet(
-        df=df,
-        path=s3_path_full,
-        dataset=True,
-        mode="append",
-        partition_cols=['crt_ts_year', 'crt_ts_month', 'crt_ts_day','ident']
-    )
-    print('Append to s3 complete at '+str(current_time))
+    # Add current run timestamp column
+    df = create_crt_ts_cols(df)
 
 
-# In[16]:
+    # Write to BigQuery
+    try:
+        # Append the data to the table. If the table doesn't exist, create it.
+        gbq.to_gbq(df, table_ref_out, project_id=project_id, if_exists='append')
+        logging.info(f"Data loaded successfully to {table_ref_out}")
+
+    except gbq.GenericGBQException as e:
+        logging.error(f"An error occurred: {e}")
+
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}")
+
+
+
+# In[5]:
 
 
 # Performing the execution in here prevents main() from being called when the module is imported
@@ -101,10 +157,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-# In[ ]:
-
-
-
 
