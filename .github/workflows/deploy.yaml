@@ -21,7 +21,7 @@ jobs:
     - name: Deploy to Cloud Functions
       uses: google-github-actions/deploy-cloud-functions@v1
       with:
-        name:  flight-ml-ingest-snapshot-1
+        name:  flight-ml-ingest-snapshot-2
         entry_point: ingest
         source_dir: src
         runtime: python310
