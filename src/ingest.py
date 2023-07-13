@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[14]:
 
 
 import os
@@ -13,31 +13,7 @@ import awswrangler as wr
 from datetime import datetime as dt
 from datetime import timedelta 
 
-import json
-from datetime import datetime as dt
-from typing import Dict, Any
-
-
-class FlightAwareAPI:
-    
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        self.base_url = 'https://aeroapi.flightaware.com/aeroapi'
-
-    def _build_headers(self):
-        return {
-            'x-apikey': self.api_key,
-        }
-
-    def query(self, endpoint: str, **kwargs) -> Dict[str, Any]:
-        url = self.base_url + endpoint
-        headers = self._build_headers()
-        response = requests.get(url, headers=headers, params=kwargs)
-
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise requests.HTTPError(f"Error: {response.status_code}, {response.text}")
+from utils import FlightAwareAPI
 
 
 def get_flight_data(api, identifier, start_datetime, end_datetime, max_pages=40):
@@ -59,7 +35,6 @@ def get_flight_data(api, identifier, start_datetime, end_datetime, max_pages=40)
 
     return df
 
-
 def create_crt_ts_cols(df):
     df['crt_ts'] = dt.now()#.strftime('%Y-%m-%dT%H:%M:%SZ')
     df['crt_ts_year'] = df['crt_ts'].dt.year
@@ -69,7 +44,7 @@ def create_crt_ts_cols(df):
     return df
 
 
-# In[2]:
+# In[15]:
 
 
 def main():
@@ -102,11 +77,11 @@ def main():
     API = FlightAwareAPI(os.getenv('FLIGHTAWARE_API_KEY'))
 
     df = get_flight_data(API, identifier, query_start, query_end)
-    print('API call complete')
+    # print('API call complete')
 
     df = create_crt_ts_cols(df)
     
-    print('data transformations complete')
+    # print('data transformations complete')
 
     wr.s3.to_parquet(
         df=df,
@@ -115,10 +90,10 @@ def main():
         mode="append",
         partition_cols=['crt_ts_year', 'crt_ts_month', 'crt_ts_day','ident']
     )
-    print('append to s3 complete')
+    print('Append to s3 complete at '+str(current_time))
 
 
-# In[4]:
+# In[16]:
 
 
 # Performing the execution in here prevents main() from being called when the module is imported
@@ -131,5 +106,5 @@ if __name__ == "__main__":
 # In[ ]:
 
 
-# jupyter convert --to python src/ingest_flight_summary_2.ipynb
+
 
