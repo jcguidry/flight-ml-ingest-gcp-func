@@ -1,7 +1,7 @@
 import base64
 import functions_framework
 
-from function.ingest_flight_snapshots import main
+from ingest import main
 
 # Triggered from a message on a Cloud Pub/Sub topic.
 @functions_framework.cloud_event
