@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[4]:
 
 
 import os
@@ -27,7 +27,7 @@ from utils import FlightAwareAPI
 from utils import JSON_EncoderDecoder
 
 
-# In[2]:
+# In[5]:
 
 
 ## I/O Functions
@@ -55,23 +55,26 @@ def get_last_run_timestamp(table_ref, client):
     # Define the query to get the max timestamp
     query = f"SELECT MAX(crt_ts) as max_ts FROM `{table_ref}`"
 
-    try:
+
+    # May refactor this to distingish between a non-existen or empty table and a query error.
+    # This timestamp is crucial to data quality.
+    try:        
+        df_run_ts = client.query(query).to_dataframe()  # API request
+        last_run_ts = df_run_ts['max_ts'][0]
         
-        query_job = client.query(query)  # API request
-        results_df = query_job.to_dataframe()  # Waits for query to finish and returns a DataFrame
-        last_run_ts = results_df['max_ts'][0]
-        #this will raise an error if the timestamp is NaT, which occurs when the table is empty.
-        assert results_df['max_ts'][0] != pd.NaT 
+        # This will raise an error if the timestamp is NaT, or Null which occurs when the table is empty.
+
+        assert type(last_run_ts) == pd._libs.tslibs.timestamps.Timestamp
+
         return last_run_ts
     
-
     except Exception as e:
         # If an error occurs (such as the table not existing), return a very early timestamp
         print('No existing table, returning early timestamp.')
         return pd.Timestamp('2000-01-01 00:00:00')
 
 
-# In[3]:
+# In[6]:
 
 
 ## Transformation Functions
@@ -87,6 +90,11 @@ def create_crt_ts_cols(df):
     df['crt_ts_month'] = df['crt_ts'].dt.month
     df['crt_ts_day'] = df['crt_ts'].dt.day
     df['crt_ts_hour'] = df['crt_ts'].dt.hour
+    return df
+
+def datatype_cleanup(df):
+    df['codeshares'] = df['codeshares'].astype(str)
+    df['codeshares_iata'] = df['codeshares_iata'].astype(str)
     return df
 
 
@@ -135,20 +143,18 @@ def main():
     df = rename_columns_remove_periods(df)
 
     # Convert columns to string to avoid errors when writing to BigQuery
-    df['codeshares'] = df['codeshares'].astype(str)
-    df['codeshares_iata'] = df['codeshares_iata'].astype(str)
+    df = datatype_cleanup(df)
 
 
     # Get the last run timestamp from BigQuery
     client = bigquery.Client(credentials=gcp_credentials, project=project_id)
     last_run_ts = get_last_run_timestamp(table_ref=table_ref_out, client=client)
-    df['last_run_ts'] = last_run_ts
     
+    df['last_run_ts'] = last_run_ts
     print(f'last run timestamp: {last_run_ts}')
 
     # Add current run timestamp column
     df = create_crt_ts_cols(df)
-
 
     # Write to BigQuery
     try:
@@ -174,17 +180,10 @@ if __name__ == "__main__":
     main()
 
 
-# In[6]:
+# In[ ]:
 
 
-# # need to resolve error logging when bigquery host is down
 
-# WARNING:google.auth.compute_engine._metadata:Compute Engine Metadata server unavailable on attempt 1 of 3. Reason: timed out
-# WARNING:google.auth.compute_engine._metadata:Compute Engine Metadata server unavailable on attempt 2 of 3. Reason: [Errno 64] Host is down
-# WARNING:google.auth.compute_engine._metadata:Compute Engine Metadata server unavailable on attempt 3 of 3. Reason: [Errno 64] Host is down
-# WARNING:google.auth._default:Authentication failed using Compute Engine authentication due to unavailable metadata server.
-# No existing table, returning early timestamp.
-# last run timestamp: 2000-01-01 00:00:00
 
-# Can we pull metadata from that table instead?
+
 
