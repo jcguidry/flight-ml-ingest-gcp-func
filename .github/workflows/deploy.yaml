@@ -30,6 +30,6 @@ jobs:
         service_account_email: flight-ml-demo-general@aia-ds-accelerator-flight-1.iam.gserviceaccount.com
         secret_environment_variables: |
           FLIGHTAWARE_API_KEY=projects/673433729049/secrets/flight-aware-api-key/versions/1
-          GCP_CREDENTIALS_JSON_ENCODED=projects/673433729049/secrets/aia-service-acct-json-encoded
+          GCP_CREDENTIALS_JSON_ENCODED=projects/673433729049/secrets/aia-service-acct-json-encoded/versions/1
         deploy_timeout: 300
 
