@@ -28,6 +28,6 @@ jobs:
         event_trigger_type: google.pubsub.topic.publish
         event_trigger_resource: projects/aia-ds-accelerator-flight-1/topics/ingest-flight-snapshot-trigger
         secret_environment_variables: |
-          FLIGHTAWARE_API_KEY=projects/673433729049/secrets/flight-aware-api-key
+          FLIGHTAWARE_API_KEY=projects/673433729049/secrets/flight-aware-api-key/versions/1
           GCP_CREDENTIALS_JSON_ENCODED=projects/673433729049/secrets/aia-service-acct-json-encoded
         deploy_timeout: 300
