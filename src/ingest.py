@@ -5,6 +5,10 @@
 
 
 import os
+import json
+from dotenv import load_dotenv
+import logging
+logging.basicConfig(level=logging.INFO)
 
 import requests
 import pandas as pd
@@ -12,16 +16,15 @@ import pandas as pd
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', 50)
 
-import logging
-logging.basicConfig(level=logging.INFO)
-
+from google.oauth2 import service_account
+from google.cloud import bigquery
 from pandas_gbq import gbq
 
 from datetime import datetime as dt
 from datetime import timedelta 
 
 from utils import FlightAwareAPI
-from utils import run_bigquery_query
+from utils import JSON_EncoderDecoder
 
 
 # In[2]:
@@ -48,13 +51,14 @@ def get_flight_data(api, identifier, start_datetime, end_datetime, max_pages=40)
 
     return df
 
-
-def get_last_run_timestamp(table_ref):
+def get_last_run_timestamp(table_ref, client):
     # Define the query to get the max timestamp
     query = f"SELECT MAX(crt_ts) as max_ts FROM `{table_ref}`"
 
     try:
-        results_df = run_bigquery_query(query)
+        
+        query_job = client.query(query)  # API request
+        results_df = query_job.to_dataframe()  # Waits for query to finish and returns a DataFrame
         last_run_ts = results_df['max_ts'][0]
         #this will raise an error if the timestamp is NaT, which occurs when the table is empty.
         assert results_df['max_ts'][0] != pd.NaT 
@@ -90,9 +94,19 @@ def create_crt_ts_cols(df):
 
 
 def main():
-    # CREDENTIALS - DELETE THIS LINE BEFORE COMMITTING
-    os.environ['FLIGHTAWARE_API_KEY'] = 'w4tsTSMNABOlC4HTtKsc38Odp8CDGAK9'
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/Users/collinguidry/Downloads/aia-ds-accelerator-flight-1-ba42ff928314.json"
+
+    # Environment variables
+    load_dotenv()  # take environment variables from .env.
+    
+    # GCP Serive Account Credentials
+    gcp_creds_encoded = os.environ.get('GCP_CREDENTIALS_JSON_ENCODED')
+    # See Utils.py for the JSON_EncoderDecoder class
+    gcp_credentials_json = JSON_EncoderDecoder(gcp_creds_encoded).decode().get()
+    gcp_credentials = service_account.Credentials.from_service_account_info(gcp_credentials_json)
+    
+    # FlightAware API Key
+    fa_api_key = os.getenv('FLIGHTAWARE_API_KEY')
+
 
     # API QUERY PARAMETERS
     identifier = 'AAL2563'
@@ -113,9 +127,8 @@ def main():
     table_ref_out = f"{project_id}.{dataset_id}.{table_id}"
 
 
-    # EXECUTION
-    API = FlightAwareAPI(os.getenv('FLIGHTAWARE_API_KEY'))
-
+    # ------ EXECUTION ------
+    API = FlightAwareAPI(fa_api_key)
     df = get_flight_data(API, identifier, query_start, query_end)
 
     # Rename columns with '.' in the name.
@@ -125,8 +138,10 @@ def main():
     df['codeshares'] = df['codeshares'].astype(str)
     df['codeshares_iata'] = df['codeshares_iata'].astype(str)
 
+
     # Get the last run timestamp from BigQuery
-    last_run_ts = get_last_run_timestamp(table_ref=table_ref_out)
+    client = bigquery.Client(credentials=gcp_credentials, project=project_id)
+    last_run_ts = get_last_run_timestamp(table_ref=table_ref_out, client=client)
     df['last_run_ts'] = last_run_ts
     
     print(f'last run timestamp: {last_run_ts}')
@@ -138,7 +153,7 @@ def main():
     # Write to BigQuery
     try:
         # Append the data to the table. If the table doesn't exist, create it.
-        gbq.to_gbq(df, table_ref_out, project_id=project_id, if_exists='append')
+        gbq.to_gbq(df, table_ref_out, project_id=project_id, if_exists='append', credentials=gcp_credentials)
         logging.info(f"Data loaded successfully to {table_ref_out}")
 
     except gbq.GenericGBQException as e:
@@ -157,4 +172,19 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# In[6]:
+
+
+# # need to resolve error logging when bigquery host is down
+
+# WARNING:google.auth.compute_engine._metadata:Compute Engine Metadata server unavailable on attempt 1 of 3. Reason: timed out
+# WARNING:google.auth.compute_engine._metadata:Compute Engine Metadata server unavailable on attempt 2 of 3. Reason: [Errno 64] Host is down
+# WARNING:google.auth.compute_engine._metadata:Compute Engine Metadata server unavailable on attempt 3 of 3. Reason: [Errno 64] Host is down
+# WARNING:google.auth._default:Authentication failed using Compute Engine authentication due to unavailable metadata server.
+# No existing table, returning early timestamp.
+# last run timestamp: 2000-01-01 00:00:00
+
+# Can we pull metadata from that table instead?
 

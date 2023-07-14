@@ -2,7 +2,6 @@ import requests
 import json
 from datetime import datetime as dt
 from typing import Dict, Any
-from google.cloud import bigquery
 
 class FlightAwareAPI:
     
@@ -27,12 +26,39 @@ class FlightAwareAPI:
         
 
 
-def run_bigquery_query(query):
-    # Create a BigQuery client.
-    client = bigquery.Client()
 
-    # Run the query
-    query_job = client.query(query)  # API request
-    results_df = query_job.to_dataframe()  # Waits for query to finish and returns a DataFrame
+import base64
 
-    return results_df
+class JSON_EncoderDecoder():
+    """
+    GCP service account keys (for auth) are stored as JSON objects, loaded from a file.
+    Thie allows you to avoid storing the key in a file.
+    
+    Encodes and decodes json objects to and from strings.
+    This is useful for storing json objects in environment variables.
+
+    """
+    def __init__(self, json_object):
+        self.json_object = json_object
+
+    def encode(self):
+        '''encodes json to a string which can be stored in 
+        an environment variable'''
+        assert isinstance(self.json_object, dict), 'Variable to encode must be a dict.'
+        x = json.dumps(self.json_object)
+        self.json_object = base64.b64encode(x.encode('utf-8'))
+        return self
+    
+    def decode(self):
+        '''decodes json from a string which can be stored in 
+        an environment variable'''
+        assert isinstance(self.json_object, str), 'Variable to decode must be a string.'
+        x = str(self.json_object)[2:-1]
+        self.json_object = json.loads(base64.b64decode(x).decode('utf-8'))
+        return self
+    
+    def get(self):
+        return self.json_object
+
+
+
