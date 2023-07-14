@@ -28,22 +28,20 @@ To set up and run the project, you typically need to do the following:
 1. Create a virtual environment for with Python 3.10.0 for dev purposes. If using Miniconda, you can do this by running `conda create -n <env_name> python=3.10.0`.
 2. Install the required Python dependencies listed in `src/requirements.txt`. You can do this by running `pip install -r src/requirements.txt`.
 3. Create a `.env` file in the base directory. Two environment vairble keys will be stored here:
-    - `FLIGHTAWARE_API_KEY` - API key for the FlightAware API.
-    - `GCP_CREDENTIALS_JSON_ENCODED` - A GCP service account key, encoded as a string. 
-        - This key is used to authenticate with GCP services such as the BigQuery client and pandas_gbq. To encode the key, you can use the `JSON_EncoderDecoder` class in `src/utils.py` script. 
-        - The easiest way to do this is to use the `src/ingest.ipynb` notebook, in a new cell, paste your service key as a JSON object, encode the key using `JSON_EncoderDecoder(json_object).encode().get()`, and copy the encoded key to the `.env` file. Don't forget to delete the cell after you're done.
+   - `FLIGHTAWARE_API_KEY` - API key for the FlightAware API.
+   - `GCP_CREDENTIALS_JSON_ENCODED` - A GCP service account key, encoded as a string.
+     - This key is used to authenticate with GCP services such as the BigQuery client and pandas_gbq. To encode the key, you can use the `JSON_EncoderDecoder` class in `src/utils.py` script.
+     - The easiest way to do this is to use the `src/ingest.ipynb` notebook, in a new cell, paste your service key as a JSON object, encode the key using `JSON_EncoderDecoder(json_object).encode().get()`, and copy the encoded key to the `.env` file. Don't forget to delete the cell after you're done.
 4. Debug the `src/ingest.ipynb` notebook to ensure that the data is being ingested correctly. (Optional)
-    - If your goal is to test, debug, or modify this app, you can run the `src/ingest.ipynb` notebook. It is identical to `src/ingest.ipynb`. Should you make any changes, you can run `src/convert_to_py.ipynb` to copy the changes to `src/ingest.py`. This allows the project to be run as a Python script, as opposed to a Jupyter notebook, while still allowing for easy testing and debugging.
+   - If your goal is to test, debug, or modify this app, you can run the `src/ingest.ipynb` notebook. It is identical to `src/ingest.ipynb`. Should you make any changes, you can run `src/convert_to_py.ipynb` to copy the changes to `src/ingest.py`. This allows the project to be run as a Python script, as opposed to a Jupyter notebook, while still allowing for easy testing and debugging.
 5. Run the main Python script with `python src/main.py`.
-
-
 
 ## Deployment
 
-- Github Actions Authentication
+- ***Github Actions Authentication***
   - The project is set up for deployment with GitHub Actions, as defined in the `.github/workflows/deploy.yaml` file.
   - To deploy the project, add a `GCP_SA_KEY` secret to your GitHub Actions environment. This allows the deployment workflow to authenticate with GCP services. When doing so,  copy the contents of your GCP service account key to the secret as s full JSON object.
-- Cloud Function Authentication
+- ***Cloud Function Authentication***
   - You will need to add the following environment variables to your GCP Cloud Function:
     - `FLIGHTAWARE_API_KEY`
     - `GCP_CREDENTIALS_JSON_ENCODED`
