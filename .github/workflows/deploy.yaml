@@ -31,12 +31,3 @@ jobs:
           FLIGHTAWARE_API_KEY=projects/673433729049/secrets/flight-aware-api-key
           GCP_CREDENTIALS_JSON_ENCODED=projects/673433729049/secrets/aia-service-acct-json-encoded
         deploy_timeout: 1200
-
-
-
-
-
-
-
-        
-
