@@ -4,7 +4,7 @@
 
 This repository contains the code for a machine learning data ingestion pipeline for flight data. The pipeline uses Google Cloud Platform (GCP) functions and interacts with the FlightAware API.
 
-The data Is Ingested as 'snapshots' of the flight statuses provided by the API, with a timestamp of the current snapshot run and the previous snapshot run. Each new snapshot Is appended to a Google BigQuery table when this cloud function Is Invoked.
+The data is Ingested as 'snapshots' of the flight statuses provided by the API, with a timestamp of the current snapshot run and the previous snapshot run. Each new snapshot is appended to a Google BigQuery table when this cloud function is invoked.
 
 ## Project Structure
 
@@ -14,7 +14,7 @@ The repository is structured as follows:
 - `src/ingest.py`: Used to get flight data from the FlightAware API, given a flight identifier and a time range. It then stores the data in a BigQuery table.
 - `src/ingest.ipynb`: Where the ingest.py file can be developed and debugged. All execution must occur in the `main()` function. The script, `src/ingest.py`, should be an identical copy of this notebook.
 - `src/convert_to_py.ipynb`: A single-cell notebook which converts the `src/ingest.ipynb` to a Python script. You can run this after making changes to the `src/ingest.ipynb` notebook.
-- `src/utils.py`: Has utility functions which are imported into ingest. Includes a class for encoding JSON objects to strings and decoding strings back to JSON objects. This Is useful for storing JSON objects in environment variables, rather than importing them from a JSON file. Additionally, this script contains a helper class for the FlightAware API.
+- `src/utils.py`: Has utility functions which are imported into ingest. Includes a class for encoding JSON objects to strings and decoding strings back to JSON objects. This is useful for storing JSON objects in environment variables, rather than importing them from a JSON file. Additionally, this script contains a helper class for the FlightAware API.
 - `.github/workflows/deploy.yaml`: Defines a GitHub Actions workflow for deploying ()or updating) the Cloud Function on GCP, along with the Cloud Function's configuration options.
 
 Additional files in the repository include:
@@ -41,12 +41,12 @@ To set up and run the project, you typically need to do the following:
 
 - ***Github Actions Authentication***
   - The project is set up for deployment with GitHub Actions, as defined in the `.github/workflows/deploy.yaml` file.
-  - To deploy the project, add a `GCP_SA_KEY` secret to your GitHub Actions environment. This allows the deployment workflow to authenticate with GCP services. Make sure to copy and paste the entire the service account key JSON object, Including `{}`.
+  - To deploy the project, add a `GCP_SA_KEY` secret to your GitHub Actions environment. This allows the deployment workflow to authenticate with GCP services. Make sure to copy and paste the entire the service account key JSON object, including `{}`.
 - ***Cloud Function Authentication***
   - You will need to add the following environment variables to your GCP Cloud Function:
     - `FLIGHTAWARE_API_KEY`
     - `GCP_CREDENTIALS_JSON_ENCODED`
   - These should be stored in the GCP Secret Manager, then referenced in the Cloud Function configuration.
     - These secrets are assigned to environment variable names in the `deploy.yaml` workflow, using the `secret_environment_variables` parameter,
-      - For the deployed app to access these secrets, you must specify a `service-account-email` which the deployed app will belong to. This `service-account-email` must have the `Secret Manager Secret Accessor` role which can be granted In GCP's IAM & Admin section.
+      - For the deployed app to access these secrets, you must specify a `service-account-email` which the deployed app will belong to. This `service-account-email` must have the `Secret Manager Secret Accessor` role which can be granted in GCP's IAM & Admin section.
   - List of Deployment Configuration Parameters: [Github Actions for Google Cloud Functions](https://github.com/google-github-actions/deploy-cloud-functions)
