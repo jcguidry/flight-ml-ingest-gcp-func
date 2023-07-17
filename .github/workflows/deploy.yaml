@@ -31,5 +31,6 @@ jobs:
         secret_environment_variables: |
           FLIGHTAWARE_API_KEY=projects/673433729049/secrets/flight-aware-api-key/versions/1
           GCP_CREDENTIALS_JSON_ENCODED=projects/673433729049/secrets/aia-service-acct-json-encoded/versions/1
+        memory_mb: 512MB
         deploy_timeout: 300
 
