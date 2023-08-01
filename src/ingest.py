@@ -206,7 +206,7 @@ def main(identifier):
 # and it allows us to run this file directly from the command line
 
 if __name__ == "__main__":
-    main(identifier='AAL2563')
+    main(identifier='AA2563')
 
 
 # In[ ]:
