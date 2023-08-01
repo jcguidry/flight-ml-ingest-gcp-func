@@ -101,7 +101,7 @@ def datatype_cleanup(df):
 # In[4]:
 
 
-def main():
+def main(identifier):
 
     # Environment variables
     load_dotenv()  # take environment variables from .env.
@@ -117,7 +117,7 @@ def main():
 
 
     # API QUERY PARAMETERS
-    identifier = 'AAL2563'
+    # identifier = 'AAL2563'
 
     lookback_hours = 7*24 # based on the flight's estimated or actual departure
     lookfoward_hours = 2*24 
