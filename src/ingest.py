@@ -180,7 +180,7 @@ def main(identifier):
     # Retrieve the previous 'scheduled_out' values from Firestore
     scheduled_out_prev_dict = get_scheduled_out_prev_ts(df['fa_flight_id'].unique(), firestore_client)
     # Map the previous 'scheduled_out' values to a new column 'scheduled_out_prev_ts'
-    df['scheduled_out_prev_ts'] = df['fa_flight_id'].map(scheduled_out_prev_dict)
+    df['last_scheduled_out_ts'] = df['fa_flight_id'].map(scheduled_out_prev_dict)
 
 
     # Write to BigQuery
