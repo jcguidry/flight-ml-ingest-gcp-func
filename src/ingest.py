@@ -48,7 +48,7 @@ def get_flight_data(api, identifier, start_datetime, end_datetime, max_pages=40)
     except requests.HTTPError as e:
         print(e)
     except Exception as e:
-        logging.error(f"An unexpected Fligh API error occurred: {e}")
+        logging.error(f"An unexpected Flight API error occurred: {e}")
 
     df = pd.json_normalize(data, 'flights')
 
