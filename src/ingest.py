@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[15]:
 
 
 import os
@@ -28,7 +28,7 @@ from utils import FlightAwareAPI
 from utils import JSON_EncoderDecoder
 
 
-# In[2]:
+# In[16]:
 
 
 ## I/O Functions
@@ -88,7 +88,7 @@ def get_scheduled_out_prev_ts(fa_flight_ids, firestore_client):
 
 
 
-# In[3]:
+# In[17]:
 
 
 ## Transformation Functions
@@ -112,7 +112,7 @@ def datatype_cleanup(df):
     return df
 
 
-# In[9]:
+# In[20]:
 
 
 def main(identifier):
@@ -179,7 +179,7 @@ def main(identifier):
 
     # Retrieve the previous 'scheduled_out' values from Firestore
     scheduled_out_prev_dict = get_scheduled_out_prev_ts(df['fa_flight_id'].unique(), firestore_client)
-    # Map the previous 'scheduled_out' values to a new column 'scheduled_out_prev_ts'
+    # Map the previous 'scheduled_out' values to a new column 'last_scheduled_out_ts'
     df['last_scheduled_out_ts'] = df['fa_flight_id'].map(scheduled_out_prev_dict)
 
 
@@ -199,7 +199,7 @@ def main(identifier):
 
 
 
-# In[10]:
+# In[21]:
 
 
 # Performing the execution in here prevents main() from being called when the module is imported
@@ -207,4 +207,10 @@ def main(identifier):
 
 if __name__ == "__main__":
     main(identifier='AAL2563')
+
+
+# In[ ]:
+
+
+
 
