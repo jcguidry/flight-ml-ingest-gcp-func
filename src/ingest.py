@@ -47,6 +47,8 @@ def get_flight_data(api, identifier, start_datetime, end_datetime, max_pages=40)
 
     except requests.HTTPError as e:
         print(e)
+    except Exception as e:
+        logging.error(f"An unexpected Fligh API error occurred: {e}")
 
     df = pd.json_normalize(data, 'flights')
 
@@ -65,28 +67,25 @@ def update_last_run_timestamp(identifier, timestamp, firestore_client):
     doc_ref = firestore_client.collection('flight_timestamps').document(identifier)
     doc_ref.set({'last_run_ts': timestamp})
 
+###### For scheduled out columns
 
-# def get_last_run_timestamp(table_ref, client):
-#     # Define the query to get the max timestamp
-#     query = f"SELECT MAX(crt_ts) as max_ts FROM `{table_ref}`"
+def update_scheduled_out(fa_flight_ids, scheduled_outs, firestore_client):
+    for flight_id, scheduled_out in zip(fa_flight_ids, scheduled_outs):
+        doc_ref = firestore_client.collection('flight_scheduled_out').document(str(flight_id))
+        doc_ref.set({'scheduled_out': scheduled_out})
 
 
-#     # May refactor this to distingish between a non-existen or empty table and a query error.
-#     # This timestamp is crucial to data quality.
-#     try:        
-#         df_run_ts = client.query(query).to_dataframe()  # API request
-#         last_run_ts = df_run_ts['max_ts'][0]
-        
-#         # This will raise an error if the timestamp is NaT, or Null which occurs when the table is empty.
+def get_scheduled_out_prev_ts(fa_flight_ids, firestore_client):
+    scheduled_out_dict = {}
+    for flight_id in fa_flight_ids:
+        doc_ref = firestore_client.collection('flight_scheduled_out').document(str(flight_id))
+        doc = doc_ref.get()
+        if doc.exists:
+            scheduled_out_dict[flight_id] = pd.Timestamp(doc.get('scheduled_out'))
+        else:
+            scheduled_out_dict[flight_id] = None
+    return scheduled_out_dict
 
-#         assert type(last_run_ts) == pd._libs.tslibs.timestamps.Timestamp
-
-#         return last_run_ts
-    
-#     except Exception as e:
-#         # If an error occurs (such as the table not existing), return a very early timestamp
-#         print('No existing table, returning early timestamp.')
-#         return pd.Timestamp('2000-01-01 00:00:00')
 
 
 # In[3]:
@@ -167,15 +166,23 @@ def main(identifier):
 
     # Get the last run timestamp from Firestore
     last_run_ts = get_last_run_timestamp(identifier, firestore_client)
-    # last_run_ts = get_last_run_timestamp(table_ref=table_ref_out, client=client)
-
+    # Add current run timestamp column
     df['last_run_ts'] = last_run_ts
     print(f'last run timestamp: {last_run_ts}')
-
-    # Add current run timestamp column
     df = create_crt_ts_cols(df)
 
-    
+
+    # Group the dataframe by 'fa_flight_id' and get the 'scheduled_out' values
+    scheduled_out_dict = df.groupby('fa_flight_id')['scheduled_out'].first().to_dict()
+    # Update Firestore with the current 'scheduled_out' values
+    update_scheduled_out(scheduled_out_dict.keys(), scheduled_out_dict.values(), firestore_client)
+
+    # Retrieve the previous 'scheduled_out' values from Firestore
+    scheduled_out_prev_dict = get_scheduled_out_prev_ts(df['fa_flight_id'].unique(), firestore_client)
+    # Map the previous 'scheduled_out' values to a new column 'scheduled_out_prev_ts'
+    df['scheduled_out_prev_ts'] = df['fa_flight_id'].map(scheduled_out_prev_dict)
+
+
     # Write to BigQuery
     try:
         # Append the data to the table. If the table doesn't exist, create it.
