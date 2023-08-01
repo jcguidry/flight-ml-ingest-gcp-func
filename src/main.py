@@ -1,5 +1,8 @@
-import base64
+import json
 import functions_framework
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
 
 from ingest import main
 
@@ -7,12 +10,14 @@ from ingest import main
 @functions_framework.cloud_event
 def ingest(cloud_event):
 
-    print(f'cloud_event: {cloud_event}')
+    # Receive the Pub/Sub message from the CloudEvent
+    event_message = cloud_event.data["message"]["data"].decode("utf-8")
+    event_json = json.loads(event_message)
 
-    print(f'cloud_event.data: {cloud_event.data}')
+    #Obtain flight ident
+    flight_ident = event_json.get('flight_ident')
+    logging.info(f"Flight ident: {flight_ident}")
 
-    flight_ident = base64.b64decode(cloud_event.data["message"]["data"])
-    print(f"Flight ident: {flight_ident}")
     # Print out the data from Pub/Sub, to prove that it worked
     main(identifier = flight_ident)
     
