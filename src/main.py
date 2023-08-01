@@ -11,7 +11,7 @@ from ingest import main
 def ingest(cloud_event):
 
     # Receive the Pub/Sub message from the CloudEvent
-    event_message = cloud_event.data["message"]["data"].decode("utf-8")
+    event_message = cloud_event.data["message"]["data"]
     event_json = json.loads(event_message)
 
     #Obtain flight ident
