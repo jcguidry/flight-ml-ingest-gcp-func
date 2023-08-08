@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[15]:
+# In[1]:
 
 
 import os
@@ -20,6 +20,7 @@ from google.oauth2 import service_account
 from google.cloud import firestore
 from google.cloud import bigquery
 from pandas_gbq import gbq
+from google.cloud import pubsub_v1
 
 from datetime import datetime as dt
 from datetime import timedelta 
@@ -28,7 +29,7 @@ from utils import FlightAwareAPI
 from utils import JSON_EncoderDecoder
 
 
-# In[16]:
+# In[2]:
 
 
 ## I/O Functions
@@ -87,8 +88,23 @@ def get_scheduled_out_prev_ts(fa_flight_ids, firestore_client):
     return scheduled_out_dict
 
 
+# In[3]:
 
-# In[17]:
+
+# Auth Functions
+
+def retrieve_gcp_creds_from_env():
+    
+    # GCP Serive Account Credentials
+    gcp_creds_encoded = os.environ.get('GCP_CREDENTIALS_JSON_ENCODED')
+    # See Utils.py for the JSON_EncoderDecoder class
+    gcp_credentials_json = JSON_EncoderDecoder(gcp_creds_encoded).decode().get()
+    gcp_credentials = service_account.Credentials.from_service_account_info(gcp_credentials_json)
+    
+    return gcp_credentials
+
+
+# In[4]:
 
 
 ## Transformation Functions
@@ -98,8 +114,8 @@ def rename_columns_remove_periods(dataframe):
     dataframe = dataframe.rename(columns=dict(zip(dataframe.columns, new_columns)))
     return dataframe
 
-def create_crt_ts_cols(df):
-    df['crt_ts'] = pd.to_datetime('now') 
+def create_crt_ts_cols(df, current_time):
+    df['crt_ts'] = pd.to_datetime(current_time)
     df['crt_ts_year'] = df['crt_ts'].dt.year
     df['crt_ts_month'] = df['crt_ts'].dt.month
     df['crt_ts_day'] = df['crt_ts'].dt.day
@@ -112,66 +128,72 @@ def datatype_cleanup(df):
     return df
 
 
-# In[20]:
+# In[5]:
 
 
 def main(identifier):
 
-    # Environment variables
+    # ------ Environment variables ------
     load_dotenv()  # take environment variables from .env.
-    
-    # GCP Serive Account Credentials
-    gcp_creds_encoded = os.environ.get('GCP_CREDENTIALS_JSON_ENCODED')
-    # See Utils.py for the JSON_EncoderDecoder class
-    gcp_credentials_json = JSON_EncoderDecoder(gcp_creds_encoded).decode().get()
-    gcp_credentials = service_account.Credentials.from_service_account_info(gcp_credentials_json)
     
     # FlightAware API Key
     fa_api_key = os.getenv('FLIGHTAWARE_API_KEY')
 
+    # Decode GCP credentials from .env variable, convert to JSON object
+    gcp_credentials = retrieve_gcp_creds_from_env()
+    
 
-
-    # API QUERY PARAMETERS
-    # identifier = 'AAL2563'
-
-    lookback_hours = 7*24 # based on the flight's estimated or actual departure
-    lookfoward_hours = 2*24 
-    # Timestamp calculations
-    query_start = (dt.now()- timedelta(hours=lookback_hours)).strftime('%Y-%m-%dT%H:%M:%SZ')
-    current_time = dt.now().strftime('%Y-%m-%dT%H:%M:%SZ')
-    query_end = (dt.now()+ timedelta(hours=lookfoward_hours)).strftime('%Y-%m-%dT%H:%M:%SZ')
-
-
-    # BIGQUERY OUTPUT PARAMETERS
+    # ------ GCP SERVICES CLIENTS ------
     project_id = 'aia-ds-accelerator-flight-1'
+
+    bigquery_client = bigquery.Client(credentials=gcp_credentials, project=project_id)
+    firestore_client = firestore.Client(credentials=gcp_credentials, project=project_id)
+    pubsub_client = pubsub_v1.PublisherClient(credentials= gcp_credentials)
+    FA_client = FlightAwareAPI(fa_api_key)
+
+    # ------ FlightAware API QUERY PARAMETERS ------ 
+    current_time_raw = dt.utcnow()
+
+    lookback_hours = 7*24 # how many hours back to query, based on the flight's actual departure
+    lookfoward_hours = 2*24 # how many hours forward to query, based on the flight's scheduled departure
+    
+    current_time = current_time_raw.strftime('%Y-%m-%dT%H:%M:%SZ')
+    query_start = (current_time_raw - timedelta(hours=lookback_hours)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    query_end = (current_time_raw + timedelta(hours=lookfoward_hours)).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+    # ------ BIGQUERY OUTPUT PARAMETERS ------
     dataset_id = 'flightaware'
     table_id = 'flightsummary_raw'
     # BigQuery output table name
     table_ref_out = f"{project_id}.{dataset_id}.{table_id}"
 
-    client = bigquery.Client(credentials=gcp_credentials, project=project_id)
-    firestore_client = firestore.Client(credentials=gcp_credentials, project=project_id)
+    # ------ PUBSUB OUTPUT PARAMETERS ------
+    topic_name = "flight-summary-ingest_raw"
+
+
 
 
     # ------ EXECUTION ------
-    API = FlightAwareAPI(fa_api_key)
-    df = get_flight_data(API, identifier, query_start, query_end)
+    df = get_flight_data(FA_client, identifier, query_start, query_end)
 
     # Rename columns with '.' in the name.
     df = rename_columns_remove_periods(df)
 
-    # Convert columns to string to avoid errors when writing to BigQuery
+    # Convert certain columns to string to avoid errors
     df = datatype_cleanup(df)
 
+    # Add current run timestamp to the dataframe
+    df = create_crt_ts_cols(df, current_time = current_time)
 
-    # Get the last run timestamp from Firestore
+    # --- Get the last execution timestamp from Firestore, add to df
+    # - Later, appropriate filtering of snapshots
     last_run_ts = get_last_run_timestamp(identifier, firestore_client)
-    # Add current run timestamp column
+    print(f'last query run timestamp: {last_run_ts}')
+    
     df['last_run_ts'] = last_run_ts
-    print(f'last run timestamp: {last_run_ts}')
-    df = create_crt_ts_cols(df)
 
 
+    # --- Repeat for 'scheduled out' timestamp
     # Group the dataframe by 'fa_flight_id' and get the 'scheduled_out' values
     scheduled_out_dict = df.groupby('fa_flight_id')['scheduled_out'].first().to_dict()
     # Update Firestore with the current 'scheduled_out' values
@@ -184,22 +206,37 @@ def main(identifier):
 
 
     # Write to BigQuery
-    try:
-        # Append the data to the table. If the table doesn't exist, create it.
-        gbq.to_gbq(df, table_ref_out, project_id=project_id, if_exists='append', credentials=gcp_credentials)
-        logging.info(f"Data loaded successfully to {table_ref_out}")
-    except gbq.GenericGBQException as e:
-        logging.error(f"An error occurred: {e}")
+    # try:
+    #     # Append the data to the table. If the table doesn't exist, create it.
+    #     gbq.to_gbq(df, table_ref_out, project_id=project_id, if_exists='append', credentials=gcp_credentials)
+    #     logging.info(f"Data loaded successfully to {table_ref_out}")
+    # except gbq.GenericGBQException as e:
+    #     logging.error(f"An error occurred: {e}")
 
-    except Exception as e:
-        logging.error(f"An unexpected error occurred: {e}")
+    # except Exception as e:
+    #     logging.error(f"An unexpected error occurred: {e}")
     
-    # Update the last run timestamp in Firestore
-    update_last_run_timestamp(identifier, dt.now().strftime('%Y-%m-%dT%H:%M:%SZ'), firestore_client)
+
+    # Write to PubSub
+    json_data = df.to_json(orient='records', lines=True)
+
+    try:
+        topic_path = pubsub_client.topic_path(project_id, topic_name)
+
+        # Publish the JSON data to the topic
+        for record in json_data.splitlines():
+            pubsub_client.publish(topic_path, data=record.encode('utf-8'))
+        
+        print('published to PubSub topic')
+    except Exception as e:
+        logging.error(f"error when publishing to pubsub: {e}")
+
+    
+    # Update the query last run timestamp in Firestore
+    update_last_run_timestamp(identifier, current_time, firestore_client)
 
 
-
-# In[21]:
+# In[6]:
 
 
 # Performing the execution in here prevents main() from being called when the module is imported
@@ -207,6 +244,9 @@ def main(identifier):
 
 if __name__ == "__main__":
     main(identifier='AA2563')
+    
+    # df = main(identifier='AA2563')
+    # df
 
 
 # In[ ]:
