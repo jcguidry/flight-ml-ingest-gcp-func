@@ -168,7 +168,7 @@ def main(identifier):
     table_ref_out = f"{project_id}.{dataset_id}.{table_id}"
 
     # ------ PUBSUB OUTPUT PARAMETERS ------
-    topic_name = "flight-summary-ingest_raw"
+    topic_name = "flight-summary-ingest-raw"
 
 
 
