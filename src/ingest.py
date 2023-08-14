@@ -131,24 +131,45 @@ def datatype_cleanup(df):
 # In[5]:
 
 
+import pandas as pd
+from google.cloud import storage
+
+def write_to_gcs(df, bucket_name, blob_name, client):
+    # client = storage.Client()
+    bucket = client.get_bucket(bucket_name)
+
+    for year, year_df in df.groupby('crt_ts_year'):
+        for month, month_df in year_df.groupby('crt_ts_month'):
+            for day, day_df in month_df.groupby('crt_ts_day'):
+                for flight_id, flight_df in day_df.groupby('ident'):
+                    timestamp_str = dt.strftime(flight_df['crt_ts'].max(), '%Y%m%d%H%M%S')
+                    blob_name = f'{blob_name}/year={year}/month={month}/day={day}/{flight_id}/{timestamp_str}.json'
+                    blob = bucket.blob(blob_name)
+                    blob.upload_from_string(flight_df.to_json(orient='records'))
+
+
+# In[6]:
+
+
 def main(identifier):
 
     # ------ Environment variables ------
     load_dotenv()  # take environment variables from .env.
-    
+
     # FlightAware API Key
     fa_api_key = os.getenv('FLIGHTAWARE_API_KEY')
 
     # Decode GCP credentials from .env variable, convert to JSON object
     gcp_credentials = retrieve_gcp_creds_from_env()
-    
+
 
     # ------ GCP SERVICES CLIENTS ------
     project_id = 'aia-ds-accelerator-flight-1'
 
-    bigquery_client = bigquery.Client(credentials=gcp_credentials, project=project_id)
+    # bigquery_client = bigquery.Client(credentials=gcp_credentials, project=project_id)
+    # pubsub_client = pubsub_v1.PublisherClient(credentials= gcp_credentials)
     firestore_client = firestore.Client(credentials=gcp_credentials, project=project_id)
-    pubsub_client = pubsub_v1.PublisherClient(credentials= gcp_credentials)
+    storage_client = storage.Client(credentials=gcp_credentials, project=project_id)
     FA_client = FlightAwareAPI(fa_api_key)
 
     # ------ FlightAware API QUERY PARAMETERS ------ 
@@ -156,21 +177,23 @@ def main(identifier):
 
     lookback_hours = 7*24 # how many hours back to query, based on the flight's actual departure
     lookfoward_hours = 2*24 # how many hours forward to query, based on the flight's scheduled departure
-    
+
     current_time = current_time_raw.strftime('%Y-%m-%dT%H:%M:%SZ')
     query_start = (current_time_raw - timedelta(hours=lookback_hours)).strftime('%Y-%m-%dT%H:%M:%SZ')
     query_end = (current_time_raw + timedelta(hours=lookfoward_hours)).strftime('%Y-%m-%dT%H:%M:%SZ')
 
     # ------ BIGQUERY OUTPUT PARAMETERS ------
-    dataset_id = 'flightaware'
-    table_id = 'flightsummary_raw'
-    # BigQuery output table name
-    table_ref_out = f"{project_id}.{dataset_id}.{table_id}"
+    # dataset_id = 'flightaware'
+    # table_id = 'flightsummary_raw'
+    # # BigQuery output table name
+    # table_ref_out = f"{project_id}.{dataset_id}.{table_id}"
 
     # ------ PUBSUB OUTPUT PARAMETERS ------
-    topic_name = "flight-summary-ingest-raw"
+    # topic_name = "flight-summary-ingest-raw"
 
-
+    # ------ GCS PARAMETERS ------
+    bucket_name = 'datalake-flight-dev-1'
+    blob_name = 'flightsummary-ingest-raw-json'
 
 
     # ------ EXECUTION ------
@@ -189,54 +212,50 @@ def main(identifier):
     # - Later, appropriate filtering of snapshots
     last_run_ts = get_last_run_timestamp(identifier, firestore_client)
     print(f'last query run timestamp: {last_run_ts}')
-    
-    df['last_run_ts'] = last_run_ts
 
+    df['last_run_ts'] = last_run_ts
 
     # --- Repeat for 'scheduled out' timestamp
     # Group the dataframe by 'fa_flight_id' and get the 'scheduled_out' values
     scheduled_out_dict = df.groupby('fa_flight_id')['scheduled_out'].first().to_dict()
-    # Update Firestore with the current 'scheduled_out' values
-    update_scheduled_out(scheduled_out_dict.keys(), scheduled_out_dict.values(), firestore_client)
 
     # Retrieve the previous 'scheduled_out' values from Firestore
     scheduled_out_prev_dict = get_scheduled_out_prev_ts(df['fa_flight_id'].unique(), firestore_client)
     # Map the previous 'scheduled_out' values to a new column 'last_scheduled_out_ts'
     df['last_scheduled_out_ts'] = df['fa_flight_id'].map(scheduled_out_prev_dict)
 
+    # Write to GCS
+    try:
+        write_to_gcs(df, bucket_name, blob_name, storage_client)
+    except Exception as e:
+        logging.error(f"error when publishing to pubsub: {e}")
 
     # Write to BigQuery
     # try:
     #     # Append the data to the table. If the table doesn't exist, create it.
     #     gbq.to_gbq(df, table_ref_out, project_id=project_id, if_exists='append', credentials=gcp_credentials)
-    #     logging.info(f"Data loaded successfully to {table_ref_out}")
-    # except gbq.GenericGBQException as e:
-    #     logging.error(f"An error occurred: {e}")
-
     # except Exception as e:
-    #     logging.error(f"An unexpected error occurred: {e}")
-    
+    #     logging.error(f"error when publishing to bigquery: {e}")
+
 
     # Write to PubSub
-    json_data = df.to_json(orient='records', lines=True)
+    # try:
+    #   json_data = df.to_json(orient='records', lines=True)    
+    #   topic_path = pubsub_client.topic_path(project_id, topic_name)
+    #     for record in json_data.splitlines():
+    #         pubsub_client.publish(topic_path, data=record.encode('utf-8'))    
+    # except Exception as e:
+    #     logging.error(f"error when publishing to pubsub: {e}")
 
-    try:
-        topic_path = pubsub_client.topic_path(project_id, topic_name)
 
-        # Publish the JSON data to the topic
-        for record in json_data.splitlines():
-            pubsub_client.publish(topic_path, data=record.encode('utf-8'))
-        
-        print('published to PubSub topic')
-    except Exception as e:
-        logging.error(f"error when publishing to pubsub: {e}")
-
-    
     # Update the query last run timestamp in Firestore
     update_last_run_timestamp(identifier, current_time, firestore_client)
 
+    # Update Firestore with the current 'scheduled_out' values
+    update_scheduled_out(scheduled_out_dict.keys(), scheduled_out_dict.values(), firestore_client)
 
-# In[6]:
+
+# In[7]:
 
 
 # Performing the execution in here prevents main() from being called when the module is imported
@@ -247,10 +266,4 @@ if __name__ == "__main__":
     
     # df = main(identifier='AA2563')
     # df
-
-
-# In[ ]:
-
-
-
 
